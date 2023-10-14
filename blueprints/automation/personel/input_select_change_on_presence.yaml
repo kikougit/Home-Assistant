@@ -1,0 +1,103 @@
+###############################################################################################
+### Automation blueprint pour modifier la valuer d'un input_select en fonction
+### de l'état de présence d'une personne
+### 
+### 
+###############################################################################################
+### Input : -personne (ou groupe de personne) à suivre 
+###         
+###         -input_select a modifier
+###         -input_boolean permetant de débrailler l'automatisatioon
+###         
+### Variable(s) blueprint:  
+###         -valeur a positionner dans input_select si Home 
+###         -valeur a positionner dans input_select si not_home
+###         -bolean debug permettant de remonter ou non des trace dans le loggbook 
+###############################################################################################
+### V 1.0 : version mise en prodution le 21/01/23 
+### V 1.1 : ajout d'une variable modifiable par UI DEBUG pour trace dans logbook
+###         RAF modifier le code pour ajouter les messages
+### V 1.x : 
+###############################################################################################
+
+
+blueprint:
+  name: change input_select sur etat home not_home
+  description: modifier automatiquement la valeur d'un input_select en fonction du changement d'état d'une personne ou groupe de personne
+  domain: automation
+  input:
+    Input_select:
+      name: input_select à modifier
+      description: nom de l'input selecte à modifier
+      selector:
+        entity:
+          domain:
+            - input_select
+    Person_suivi:
+      name: personne ou groupe à suivre
+      description: nom de la personne (ou un groupe de personne) à suivre
+      selector:
+        entity:
+          domain:
+            - person
+            - group
+    Input_actif_change:
+      name: input_boolean permettant d'activer désactiver cette fonction
+      description: nom de l'input qui sert de test à l'action ou non de cette fonction
+      selector:
+        entity:
+          domain:
+            - input_boolean
+    Value_at_home:
+      name: valeur a positionner si detection 'home'
+      selector:
+        text:
+    Value_not_at_home:
+      name: valeur a positionner si detection 'not_home'
+      selector:
+        text:    
+    Boolean_debug:
+      name: DEBUG
+      description: afficher une trace dans le logbook en fin d'execution
+      default: false
+      selector:
+        boolean:      
+variables:
+  Value_home: !input Value_at_home
+  Value_not_home: !input Value_not_at_home
+  My_boolean_debug: !input Boolean_debug
+  
+trigger:
+  - platform: state
+    entity_id: !input Person_suivi
+    to: home
+    id: present
+  - platform: state
+    entity_id: !input Person_suivi
+    to: not_home
+    id: absent
+condition:
+  - condition: state
+    entity_id: !input Input_actif_change
+    state: "on"
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: present
+        sequence:
+          - service: input_select.select_option
+            data:
+              option: '{{Value_home}}'
+            target:
+              entity_id: !input Input_select
+      - conditions:
+          - condition: trigger
+            id: absent
+        sequence:
+          - service: input_select.select_option
+            data:
+              option: '{{Value_not_home}}'
+            target:
+              entity_id: !input Input_select
+mode: single

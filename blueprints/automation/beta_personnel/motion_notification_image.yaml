@@ -1,0 +1,186 @@
+blueprint:
+  name: zzz beta - Send a camera snapshot when motion is detected (test)
+  description: >
+    This automation blueprint creates a camera snapshot if motion is detected 
+    and sends a notification to your phone with the picture.
+  domain: automation
+  input:
+    motion_sensor:
+      name: Motion sensor
+      description: The sensor wich triggers the snapshot creation
+      selector:
+          entity:
+            domain: binary_sensor
+            device_class: motion
+
+    camera:
+      name: Camera
+      description: The camera which creates the snapshot
+      selector:
+        entity:
+          domain: camera
+
+#    notify_device:
+#      name: Device to notify
+#      description: Device needs to run the official Home Assistant app to receive notifications
+#      selector:
+#        device:
+#          integration: mobile_app
+#          multiple: true
+    notify_device:
+      name: Appareils notifiés
+      description: liste d'appareil(s) à notifier lors de l'activation de l'automatisation (si pas en mode seulement appareil déclenchant)
+      default: []
+      selector:
+        device:
+          filter:
+            integration: mobile_app
+          multiple: true
+    is_ios:
+      name: Is it an iOS device?
+      description: Toggle if your selected device runs iOS, default is Android
+      selector:
+        boolean:
+      default: false
+
+    notification_title:
+      name: Notification title (Optional)
+      description: 'Default: "Motion detected!"'
+      default: "Motion detected!"
+
+    notification_message:
+      name: Notification message (Optional)
+      description: 'Default: "{{ motion_sensor_name }} detected movement!"'
+      default: "{{ motion_sensor_name }} detected movement!"
+      
+    delay:
+      name: Delay (Optional)
+      description: Wait before creating camera snapshot
+      default: ""
+      selector:
+        number:
+            min: 0
+            max: 60
+            unit_of_measurement: seconds
+            mode: slider
+    trig_debug:
+      name: debug - notification persistante
+      description: activer la notification persistante pour voir des traces de l'éxécution
+      selector:
+        boolean:
+      default: false
+trigger:
+  platform: state
+  entity_id: !input motion_sensor
+  from: "off"
+  to: "on"
+
+variables:
+  my_script_name: "debug - script notification image on motion (test)"
+  my_script_debug_id: debug - script notification image on motion (test)
+  my_debug: !input trig_debug
+  my_time_start: '{{ now().strftime("%H:%M:%S %Y-%m-%d") }}'
+  my_sensor_entity: '{{trigger.entity_id}}'
+  my_sensor_name: '{{ states[my_sensor_entity].name }}'
+  motion_sensor: !input motion_sensor
+  motion_sensor_name: "{{ states[motion_sensor].name }}"
+  camera: !input camera
+  notify_device: !input notify_device
+  is_ios: !input is_ios
+  notification_title: !input notification_title
+  notification_message: !input notification_message
+  delay: !input delay
+  snapshot_create_file_path: "/config/www/tmp/snapshot_{{ states[camera].object_id }}.jpg"
+  snapshot_access_file_path: "{{ snapshot_create_file_path | replace('/config/www','/local') }}"
+
+action:
+#### fonction trace debug
+  - alias: trace debug - notification persistante
+    if:
+      - condition: template
+        value_template: "{{ my_debug }}"
+    then:
+      - service: persistent_notification.create
+        data:
+          notification_id: "{{my_script_debug_id}}"
+          title: "{{my_script_name}} - start"
+          message: |
+            Script blueprint déclenché: {{ my_script_name }}- {{my_time_start}} 
+
+### take camera snapshot
+  - delay: "{{ delay }}"
+
+  - service: camera.snapshot
+    entity_id: !input camera
+    data:
+      filename: "{{ snapshot_create_file_path }}"
+
+### Notification app_mobile
+#  - device_id: !input notify_device
+#    domain: mobile_app
+#    type: notify
+#    title: "{{ notification_title }}"
+#    message: "{{ notification_message }}"
+#    data: >
+#      {% set android_data = {"image": "%s"} | format(snapshot_access_file_path) %}
+#      {% set ios_data = {"attachment": {"url": "%s", "content_type": "JPEG"}} | format(snapshot_access_file_path) %}
+#      {{ ios_data if is_ios else android_data }}
+
+#  - service: "notify.mobile_app_{{ device_attr(my_device_notif, 'name') | slugify }}"
+#    data:
+#      title: Home Assistant Information
+#      message: "{{ notification_message }}"
+#      data:
+#        confirmation: true
+#        ttl: 1
+#        priority: high
+#        channel: alarm_stream_max
+#        media_stream: alarm_stream_max
+#        color: "#2DF56D"
+#        subject: "message"
+
+##### Notification multipe device
+  - repeat:
+      for_each: !input notify_device
+      sequence:
+        #Notification message texte
+        - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+          data:
+            title: Home Assistant Alerte
+            message: "{{ notification_message }}"
+            data:
+              confirmation: true
+              ttl: 1
+              priority: high
+              channel: alarm_stream_max
+              media_stream: alarm_stream_max
+              color: "red"
+              subject: "message" 
+              image: "{{snapshot_access_file_path}}"
+
+## fonction trace debug
+  - alias: trace debug - notification persistante
+    if:
+      - condition: template
+        value_template: "{{ my_debug }}"
+    then:
+      - service: persistent_notification.create
+        data:
+          title: "{{my_script_name}} - fin"
+          notification_id: "{{my_script_debug_id}}"
+          message: |
+            Script blueprint déclenché: {{ my_script_name }}- {{my_time_start}} 
+            my_sensor_entity: {{my_sensor_entity}}
+            my_sensor_name: {{my_sensor_name}}
+            motion_sensor: {{motion_sensor}}
+            motion_sensor_name: "{{ motion_sensor_name }}"
+            camera: {{camera}}
+            notify_device: {{notify_device}}
+            is_ios: {{is_ios}}
+            notification_title: {{notification_title}}
+            notification_message: {{notification_message}}
+            delay: {{delay}}
+            snapshot_create_file_path: {{snapshot_create_file_path}} 
+            snapshot_access_file_path: {{snapshot_access_file_path}}
+#            my_output_text: '{{ states(my_output_text) }}' 
+#            message: {{ states(my_output_text) }}

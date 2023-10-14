@@ -1,0 +1,96 @@
+blueprint:
+  name: Motion-activated Light with sun elevation
+  description: Turn on a light when motion is detected and sun elevation below value.
+  domain: automation
+
+  input:
+    motion_entity:
+      name: Motion Sensor
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: motion
+    light_target:
+      name: Lampe
+      selector:
+        target:
+          entity:
+            domain: light
+    trig_sun_elevation:
+      name: Déclenchement avec élévation soleil
+      description: Allumer seulement si le soleil est sous le seuil d'élévation
+      default: false
+      selector:
+        boolean:
+    sun_elevation:
+      name: Hauteur max soleil
+      description: "valeur en dessous de laquelle la détection de mouvement allume la lumière."
+      default: 10
+      selector:
+        number:
+          min: -10
+          max: 70
+          unit_of_measurement: degrées
+    no_motion_wait:
+      name: Délai pour éteindre
+      description: Durée pour éteindre après dernière détection de mouvement.
+      default: 120
+      selector:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: seconds
+
+# If motion is detected within the delay,
+# we restart the script.
+mode: restart
+max_exceeded: silent
+
+trigger:
+  platform: state
+  entity_id: !input motion_entity
+  from: "off"
+  to: "on"
+
+variables:
+  my_sun_condition: !input trig_sun_elevation
+  my_elevation: !input sun_elevation
+
+  
+condition:
+  - condition: or
+    conditions:
+      - condition: not
+        conditions:
+          - condition: template
+            value_template: "{{ my_sun_condition }}"
+      - condition: and
+        conditions:
+          - condition: template
+            value_template: "{{ my_sun_condition }}"
+          - condition: numeric_state
+            entity_id: sensor.sun_elevation
+            below: !input 'sun_elevation'
+            
+action:
+  - alias: "Turn on the light"
+    service: light.turn_on
+    target: !input light_target
+  - alias: "Wait until there is no motion from device"
+    wait_for_trigger:
+      platform: state
+      entity_id: !input motion_entity
+      from: "on"
+      to: "off"
+  - alias: "Wait the number of seconds that has been set"
+    delay: !input no_motion_wait
+  - alias: "Turn off the light"
+    service: light.turn_off
+    target: !input light_target
+
+
+#  -   service: persistent_notification.create
+#      data:
+#        notification_id: "test_debug"
+#        title: debug - 
+#        message: "Automation déclenchée {{alias}}- condition vérifiée ({{ my_sun_condition }} ) et déclencheur sur on "

@@ -1,0 +1,46 @@
+blueprint:
+  name: zzz beta - Test 2022-06-04
+  description: 'BLABLABLA'
+  domain: automation
+  input:
+    person_entity:
+      name: Light
+      selector:
+        entity:
+          domain: person
+          multiple: true
+    zone_entity:
+      name: Zone
+      selector:
+        entity:
+          domain: zone
+
+
+
+trigger:
+  - platform: state
+    entity_id: !input 'person_entity'
+    to: home
+    #to: !input zone_entity
+variables:
+  my_zone_entity: !input zone_entity
+  # This is the state of the person when it's in this zone.
+  zone_state: '{{ states[my_zone_entity].name }}'
+  #### Avec entité déclenchant l'automatisme
+  person_entity: '{{trigger.entity_id}}'
+  person_name: '{{ states[person_entity].name }}'
+  
+condition:
+  condition: template
+  #value_template: "{{ trigger.from_state.state != 'zone_state' and trigger.to_state.state == 'zone_state' }}"
+  value_template: >-
+    {{ trigger.from_state.state != "home" and trigger.to_state.state == "home" }}
+
+action:
+  - service: notify.persistent_notification
+    data:
+      message: >- 
+        bla bla '{{zone_state}}', '{{trigger.entity_id}}', 
+        '{{entity_id}}' - '{{ trigger.from_state.state}}' - '{{ trigger.to_state.state}}'
+        '{{ trigger.from_state.attributes.friendly_name }}'
+        '{{ trigger.to_state.attributes.friendly_name }}'

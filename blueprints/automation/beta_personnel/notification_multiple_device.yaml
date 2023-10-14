@@ -1,0 +1,53 @@
+blueprint:
+  name: zzz beta - multi device notification (test)
+  domain: automation
+  input:
+    person_entity:
+      name: personne(s)
+      selector:
+        entity:
+          domain: person
+          multiple: true
+    notify_device:
+      name: Devices
+      default: []
+      selector:
+        device:
+          integration: mobile_app
+          multiple: true
+
+
+#trigger:
+#  - platform: time
+#    at: !input time
+trigger:
+  platform: state
+  entity_id: !input person_entity
+variables:
+  my_person_entity: '{{trigger.entity_id}}'
+  my_person_name: '{{ states[my_person_entity].name }}'
+  zone_state: "{{states[my_person_entity].state }}"
+condition:
+  condition: template
+  #value_template: "{{ trigger.from_state.state != 'zone_state' and trigger.to_state.state == 'zone_state' }}"
+  value_template: >-
+    {{ trigger.from_state.state != trigger.to_state.state }}
+action:
+  - alias: Send a notification to each device
+    repeat:
+      for_each: !input notify_device
+      sequence:
+        - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+          data:
+            title: Test notif mulptiple devices
+            message: "Hello nono , world. {{my_person_name}} vient d'arriver à {{zone_state}}"
+            data:
+              actions:
+                - action: "{{ 'TURN_OFF_' ~ context.id }}"
+                  title: Off Action
+                - action: "{{ 'TURN_ON_' ~ context.id }}"
+                  title: "ON"
+              confirmation: true
+              ttl: 1
+              priority: high
+              car_ui: true

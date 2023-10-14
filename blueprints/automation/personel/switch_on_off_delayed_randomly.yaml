@@ -1,0 +1,182 @@
+###############################################################################################
+### Automation blueprint pour activer un switch à partir d'un autre ou Inut_boolean 
+### avec une gestion de retard aléatroire
+### gestion des modes on/off différement avec des plages de nombre aléatoire 
+### différent
+###############################################################################################
+### Input : -Timer (un par automation) permetant d'activer un temps de retard a activer avec mode 
+###         restaure pour gérer les cas de redemarrage de HA
+###         -Switch/Input_boolean représentant le device de commande Switch avec délai
+###         -Swtich le device à commander à la fin du retard. Le mode on/off étant
+###         l'input boolean
+###         -input_select mode permetant de débrailler l'automatisation
+### Variable(s) blueprint:  
+###         -Time_on et Time_off definnissant la plage max du nombre aléatoire a 
+###         recalculer a chaque appel pour le retard (en mn)
+###         -text mode input_select validant automatisation
+###         -bolean debug permettant de remonter ou non des trace dans le loggbook 
+###############################################################################################
+### V 1.0 : version mise en prodution le 21/01/23 (test limité a un input_boolean en entree)
+### V 1.1 : ajout d'une variable modifiable par UI DEBUG pour trace dans logbook
+###         RAF modifier le code pour ajouter les messages
+###         ajout d'un input_boolean pour permettre de debrayer l'automatisation via UI
+### V 1.x : 
+###############################################################################################
+
+
+blueprint:
+  name: Switching on/off with random elapse time 
+  description: ON/OFF d'un switch sur changement d'état d'un switch/input_boolean avec retard aléatoire
+  domain: automation
+  input:
+    Time_on:
+      name: delayed to ON
+      description: Delai avant allumage après déclenchement de la demande (min.).
+      selector:
+        number:
+          min: 0.0
+          max: 45.0
+          step: 1
+          mode: slider
+    Time_off:
+      name: delayed to OFF
+      description: Delai avant étaignage après déclenchement de la demande (min).
+      selector:
+        number:
+          min: 0.0
+          max: 45.0
+          step: 1
+          mode: slider
+    Entity_Switch:
+      name: Switch
+      description: ID du Switch à piloter (domaine Switch, Input_Boolean).
+      selector:
+        entity:
+          domain: 
+              - switch
+              - input_boolean
+          multiple: false
+    Entity_Switch_Source:
+      name: Switch
+      description: ID du Switch commandant (domaine Switch, Input_Boolean).
+      selector:
+        entity:
+          domain: 
+              - switch
+              - input_boolean
+          multiple: false
+    Entity_Timer:
+      name: Timer
+      description: ID du Switch à piloter (domaine Switch, Input_Boolean).
+      selector:
+        entity:
+          domain: 
+              - timer
+          multiple: false
+#    Input_actif_change:
+#      name: input_boolean permettant d'activer désactiver cette fonction
+#      description: nom de l'input qui sert de test à l'action ou non de cette fonction
+#      selector:
+#        entity:
+#          domain:
+#            - input_select
+#    Input_mode_actif:
+#      name: mode script actif
+#      description: mode de l'input_select ou ce script est actif
+#      selector:
+#        text:
+    Boolean_debug:
+      name: DEBUG
+      description: afficher une trace dans le logbook en fin d'execution
+      default: false
+      selector:
+        boolean:    
+
+variables:
+  My_Time_on: !input Time_on
+  My_Time_off: !input Time_off
+  My_input_on: "{{ range(0, (( My_Time_on * 60 )  | int  )) | random }}"
+  My_input_off: "{{ range(0, (( My_Time_off * 60 )  | int  )) | random }}"
+  My_Entity_Switch: !input Entity_Switch
+  My_Entity_Switch_Source: !input Entity_Switch_Source
+  My_State: "off"
+  My_Timer: !input Entity_Timer
+  My_boolean_debug: !input Boolean_debug
+#  My_Mode_script_actif: !input Input_mode_actif
+trigger:
+  - platform: event
+    event_type: timer.finished
+    event_data:
+      entity_id: !input Entity_Timer
+    id: simu_presence_fin_timer_retard
+  ### le timer doit etre avec mode restauré pour détecter la fin de timer pendant arret de HA
+
+  - platform: state
+    entity_id:
+      - !input Entity_Switch_Source
+    id: simu_presence_declenchement_changement_etat_retarde
+#condition:
+#  - condition: state
+#    entity_id: !input Input_actif_change
+#    state: 'My_Mode_script_actif'
+action:
+  - alias: message debug
+    service: persistent_notification.create
+    data:
+      message: >-
+        This was triggered by {{ trigger.id }}, 
+      title: debug - automation test switch retard
+
+  - alias: déclenchement de la demande avec activation du retard
+    if:
+      - condition: trigger
+        id: simu_presence_declenchement_changement_etat_retarde
+    then:
+      - service: persistent_notification.create
+        data:
+          message: >-
+            demande declenchement {{ trigger.id }}, delai on: {{ My_input_on }}, delai off: {{ My_input_off }}
+          title: debug - automation test switch retard
+      - if:
+          - condition: state
+            entity_id: !input Entity_Switch_Source
+            state: "on"
+        then:
+          - service: timer.start
+            data:
+              duration: '{{ My_input_on }}'
+            target:
+              entity_id: !input Entity_Timer
+        else:
+          - service: timer.start
+            data:
+              duration: '{{ My_input_off }}'
+            target:
+              entity_id: !input Entity_Timer
+
+  
+  - alias: Actions fin du timer de retard
+    if:
+      - condition: trigger
+        id: simu_presence_fin_timer_retard
+    then:
+      - service: persistent_notification.create
+        data:
+          message: >-
+            fin timer {{ trigger.id }}, 
+          title: debug - automation test switch retard
+      - if:
+          - condition: state
+            entity_id: !input Entity_Switch_Source
+            state: "on"
+        then:
+          - service: switch.turn_on
+            data: {}
+            target:
+              entity_id: !input Entity_Switch
+        else:
+          - service: switch.turn_off
+            data: {}
+            target:
+              entity_id: !input Entity_Switch
+

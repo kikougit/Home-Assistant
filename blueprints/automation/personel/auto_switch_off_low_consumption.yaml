@@ -1,0 +1,107 @@
+###############################################################################################
+### Automation blueprint pour eteindre prise (switch) lors de la détection de conso en veille 
+### de ce qu'elle alimente
+### 
+### 
+###############################################################################################
+### Input : -binary_sensor capteur de seuil de consommation 
+###         
+###         -switch device (ie prise) a eteindre
+###         -input_boolean permetant de débrailler l'automatisation et rendre paramétrable son activité vi UI
+###         -input_select mode simulation définit
+### Variable(s) blueprint:  
+###         -bolean debug permettant de remonter ou non des trace dans le loggbook 
+###
+###############################################################################################
+### V 1.0 : version mise en prodution le 21/01/23 
+### V 1.1 : Ajout d'une contrainte sur le mode simulation a AUTO
+### V 1.2 : 20230924 ajout d'un temps sur le triger de déclenchement pour avoir une stabilité
+###         dans la détection du seuil conso veille evitant ainsi l'oscilation au démarrage
+###############################################################################################
+
+
+blueprint:
+  name: automatique switch off sur detection conso veille
+  description: eteindre automatiquement un switch lorsque la valeur d'un seuil bas de conso est atteinte (entrée seuil valeur bas seul)
+  domain: automation
+  input:
+    Input_seuile:
+      name: input_boolean detectant le seuil bas consomation
+      description: nom de l'input_boolean detectant le seuil bas
+      selector:
+        entity:
+          domain:
+            - binary_sensor
+    Switch_turnoff:
+      name: swtich a mettre en off sur détection
+      description: nom du switch a basculer en off à la détection
+      selector:
+        entity:
+          domain:
+            - switch
+    Mode_simu:
+      name: mode simulation
+      description: nom de l'input_select définissant le mode actif, pour restreindre la fonction au mode Manuel.
+      selector:
+        entity:
+          domain:
+            - input_select
+
+    Input_actif_change:
+      name: input_boolean permettant d'activer désactiver cette fonction
+      description: nom de l'input qui sert de test à l'action ou non de cette fonction
+      selector:
+        entity:
+          domain:
+            - input_boolean
+    Boolean_debug:
+      name: DEBUG
+      description: afficher une trace dans le logbook en fin d'execution
+      default: false
+      selector:
+        boolean:
+variables:
+  My_switch: !input Switch_turnoff
+  My_boolean_debug: !input Boolean_debug
+
+trigger:
+  - platform: state
+    entity_id: !input Input_seuile
+    to: "on"
+    id: seuil_bas
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 60
+condition:
+  - condition: and
+    conditions:
+    - condition: state
+      entity_id: !input Input_actif_change
+      state: "on"
+    - condition: state
+      entity_id: !input Mode_simu
+      state: "Manuel"
+    
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: seuil_bas
+        sequence:
+### switch turn off si seuil bas activé
+          - service: switch.turn_off
+            data: {}
+            target:
+              entity_id: !input Switch_turnoff
+          - if:
+            - condition: template
+              value_template: "{{ My_boolean_debug }}"
+### trace dans logbook si debub activé
+            then:
+              - service: logbook.log
+                data:
+                  name: DEBUG automation
+                  message: (DEBUG) automatique switch OFF sur conso veille detection pour '{{My_switch}}'
+                  entity_id: !input Switch_turnoff
+mode: single

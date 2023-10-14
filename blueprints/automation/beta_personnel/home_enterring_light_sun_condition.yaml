@@ -1,0 +1,148 @@
+blueprint:
+  name: zzz beta - Switch on Light when person is arriving at home
+  description: Switch on Light when person is back at home with sun elevation condition
+  domain: automation
+  input:
+    person_entity:
+      name: liste des personnes pouvant déclencher l'automatisme
+      selector:
+        entity:
+          domain: person
+          multiple: true
+    light_target:
+      name: liste des lumières à allumer
+      selector:
+        target:
+          entity:
+            domain: light
+    trig_sun_elevation:
+      name: allumer avec hauteur du soleil
+      description: Allumer seulement si le soleil est sous le seuil d'élévation
+      default: false
+      selector:
+        boolean:
+    sun_elevation:
+      name: Hauteur max soleil
+      description: "valeur en dessous de laquelle la détection de mouvement allume la lumière."
+      default: 10
+      selector:
+        number:
+          min: -30
+          max: 70
+          unit_of_measurement: degrées
+    trig_auto_switch_off:
+      name: Extinction Automatique
+      description: Eteindre automatiquement après un délai
+      default: false
+      selector:
+        boolean:
+    auto_switch_off_delay:
+      name: Délai pour éteindre automatiquement
+      description: Durée pour éteindre après détection de présence.
+      default: 120
+      selector:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: seconds
+    debug:
+      name: mode debug
+      description: mode debug - envoie message de type notification persistente
+      default: false
+      selector:
+        boolean: {}       
+
+
+# If new person is arriving within the delay,
+# we restart the script.
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input 'person_entity'
+    to: home
+    #to: !input zone_entity
+variables:
+  #zone_entity: !input zone_entity
+  # This is the state of the person when it's in this zone.
+  #zone_state: '{{ states[zone_entity].name }}'
+  #### Avec entité déclenchant l'automatisme
+  person_entity: '{{trigger.entity_id}}'
+  person_name: '{{ states[person_entity].name }}'
+  my_sun_condition: !input 'trig_sun_elevation'
+  my_sun_elevation: !input 'sun_elevation'
+  my_trig_auto_switch_off: !input 'trig_auto_switch_off'
+  
+condition:
+  #- condition: template
+  # on vérifie que le changement d'état de person est bien un retour au domicile, 
+  # pas nécessaire ici puisqu'on déclenche le trigger sur 'to' = home, a voir si on était sur 
+  # d'autres zone que domicile (manipulation du nom de la zone ie home devient maison sur le device)
+  #value_template: >-
+  #  {{ trigger.from_state.state != "home" and trigger.to_state.state == "home" }}
+
+  #Déclenchement si lié au soleil et si sous une certaine valeur ou si non lié au soleil
+  - condition: or
+    conditions:
+      - condition: not
+        conditions:
+          - condition: template
+            value_template: "{{ my_sun_condition }}"
+      - condition: and
+        conditions:
+          - condition: template
+            value_template: "{{ my_sun_condition }}"
+          #- condition: numeric_state
+          #  entity_id: sensor.sun_elevation
+          #  below: !input 'sun_elevation'
+          - condition: template
+            value_template: "{{ (state_attr('sun.sun', 'elevation') | float < my_sun_elevation|float ) }}"
+action:
+### Allumer les lumieres condition étant remplies
+  - alias: "debug notification"
+    service: script.debug_notification
+    data:
+      message: >- 
+        Personne {{person_name}} arrivée dans la zone {{states['zone.home'].name }} et le soleil élevé à {{ state_attr('sun.sun', 'elevation') }}
+        --- sun_condition: {{ my_sun_condition }}, elevation condition: {{ my_sun_elevation|float }}
+      debug: !input 'debug'
+    response_variable: code_retour
+  - alias: "Turn on the light"
+    service: light.turn_on
+    target: !input light_target
+
+### Action Mode automatique switch off light
+  - if:
+      - condition: template
+        value_template: "{{my_trig_auto_switch_off}}"
+    then:
+    ### attente pour extinction si mode automatique
+      - alias: "debug notification"
+        service: script.debug_notification
+        data:
+          message: >- 
+            activation du timer pour éteindre les lumières
+          debug: !input 'debug'
+        response_variable: code_retour
+      - alias: "Wait the number of seconds that has been set"
+        delay: !input auto_switch_off_delay
+    ### Extinction si mode automatique
+      - alias: "debug notification"
+        service: script.debug_notification
+        data:
+          message: >- 
+            fin du délai, extinction des lumières
+          debug: !input 'debug'
+      - alias: "Turn off the light"
+        service: light.turn_off
+        target: !input light_target
+
+
+### fin du script
+  - alias: "debug notification"
+    service: script.debug_notification
+    data:
+      message: >- 
+        script arrivée d'une personne terminée
+      debug: !input 'debug'
